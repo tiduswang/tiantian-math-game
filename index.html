@@ -1679,7 +1679,7 @@
             { id: 5, name: "图形计数", icon: "🔷", desc: "数一数图形", type: "shapes", difficulty: 2, unlocked: false, stars: 0 },
             { id: 6, name: "进阶加法", icon: "➕", desc: "20以内加法", type: "addition", difficulty: 2, unlocked: false, stars: 0 },
             { id: 7, name: "进阶减法", icon: "➖", desc: "20以内减法", type: "subtraction", difficulty: 2, unlocked: false, stars: 0 },
-            { id: 8, name: "数字迷宫", icon: "🏰", desc: "找到正确答案", type: "maze", difficulty: 3, unlocked: false, stars: 0 },
+            { id: 8, name: "数字迷宫", icon: "🏰", desc: "判断奇偶数", type: "maze", difficulty: 3, unlocked: false, stars: 0 },
             { id: 9, name: "数学接龙", icon: "🐉", desc: "连续计算", type: "sequence", difficulty: 3, unlocked: false, stars: 0 },
             { id: 10, name: "终极挑战", icon: "👑", desc: "综合测试", type: "mixed", difficulty: 3, unlocked: false, stars: 0 }
         ];
@@ -1723,8 +1723,127 @@
         let currentSong = null;
         let isPlaying = false;
 
+        // ======== 音符频率表 ========
+        const NOTE_FREQ = {
+            'C3':131,'D3':147,'E3':165,'F3':175,'G3':196,'A3':220,'B3':247,
+            'C4':262,'C#4':277,'D4':294,'D#4':311,'E4':330,'F4':349,'F#4':370,
+            'G4':392,'G#4':415,'A4':440,'A#4':466,'B4':494,
+            'C5':523,'C#5':554,'D5':587,'D#5':622,'E5':659,'F5':698,'F#5':740,
+            'G5':784,'G#5':831,'A5':880,'B5':988
+        };
+
+        // ======== 世界名曲旋律 (NOTE:DURATION, R=休止, 循环播放) ========
+        const SONG_MELODIES = {
+            1:  { tempo:140, notes:'E4:0.5 E4:0.5 F4:0.5 G4:0.5 G4:0.5 F4:0.5 E4:0.5 D4:0.5 C4:0.5 C4:0.5 D4:0.5 E4:0.5 E4:0.75 D4:0.25 D4:1' },
+            2:  { tempo:110, notes:'C4:1 C4:1 G4:1 G4:1 A4:1 A4:1 G4:2 F4:1 F4:1 E4:1 E4:1 D4:1 D4:1 C4:2' },
+            3:  { tempo:100, notes:'E4:0.75 C5:0.25 B4:0.5 A4:0.5 G4:0.5 A4:0.5 B4:0.5 G4:1 A4:0.75 F4:0.25 E4:0.5 D4:0.5 C4:0.5 D4:0.5 E4:0.5 C4:1' },
+            4:  { tempo:150, notes:'R:0.5 D4:0.5 E4:0.5 E4:1 R:0.5 D4:0.5 E4:0.5 F#4:1 R:0.5 D4:0.5 E4:0.5 F#4:0.5 G4:1' },
+            5:  { tempo:160, notes:'C5:0.5 B4:0.25 A4:0.25 G4:1 R:0.25 A4:0.25 B4:0.5 C5:1 D5:0.5 C5:0.25 B4:0.25 A4:1' },
+            6:  { tempo:160, notes:'A4:0.5 R:0.25 E4:0.25 A4:0.5 B4:0.25 C5:0.25 D5:0.5 C5:0.25 B4:0.25 A4:1 R:0.5' },
+            7:  { tempo:90,  notes:'C#4:0.75 E4:0.25 G#4:1 C#4:0.75 E4:0.25 G#4:1 C#4:0.75 E4:0.25 G#4:0.75 C#4:0.25 E4:0.25 A4:1' },
+            8:  { tempo:130, notes:'E5:0.5 D5:0.25 C5:0.25 D5:0.5 C5:0.25 B4:0.25 C5:0.5 B4:0.25 A4:0.25 B4:1 R:0.5' },
+            9:  { tempo:140, notes:'E4:0.5 F#4:0.25 G4:0.25 A4:0.5 B4:0.5 G4:0.5 R:0.25 E4:0.25 F#4:0.25 G4:0.25 A4:0.5 B4:1' },
+            10: { tempo:110, notes:'A4:0.75 B4:0.25 C5:0.75 B4:0.25 A4:0.5 G4:0.5 A4:0.75 B4:0.25 C5:1 R:0.5' },
+            11: { tempo:80,  notes:'F4:0.5 E4:0.25 D4:0.25 C4:0.5 D4:0.25 E4:0.25 F4:0.5 G4:0.25 A4:0.25 G4:1 R:0.5' },
+            12: { tempo:130, notes:'E5:0.5 D#5:0.5 E5:0.5 D#5:0.5 E5:0.5 B4:0.5 D5:0.5 C5:0.5 A4:1 R:0.25 C4:0.25 E4:0.25 A4:0.25 B4:1' }
+        };
+
+        // ======== Web Audio 音频引擎 ========
+        let audioCtx = null;
+        let melodyTimer = null;
+        let melodyNoteIndex = 0;
+        let currentMelodyData = null;
+
+        function getAudioCtx() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return audioCtx;
+        }
+
+        function playNote(freq, sec) {
+            const ctx = getAudioCtx();
+            if (ctx.state === 'suspended') ctx.resume();
+            const t = ctx.currentTime;
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0, t);
+            gain.gain.linearRampToValueAtTime(0.18, t + 0.03);
+            gain.gain.setValueAtTime(0.18, t + sec * 0.6);
+            gain.gain.linearRampToValueAtTime(0.001, t + sec);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(t);
+            osc.stop(t + sec);
+        }
+
+        function stopMelody() {
+            if (melodyTimer) { clearTimeout(melodyTimer); melodyTimer = null; }
+            if (audioCtx && audioCtx.state === 'running') audioCtx.suspend();
+            isPlaying = false;
+            document.getElementById('play-pause').textContent = '▶';
+        }
+
+        function startMelodyLoop(data) {
+            if (!data) return;
+            const notes = data.notes.trim().split(/\s+/);
+            const beatSec = 60 / (data.tempo || 140);
+            function next() {
+                if (!isPlaying) return;
+                if (melodyNoteIndex >= notes.length) melodyNoteIndex = 0;
+                const parts = notes[melodyNoteIndex].split(':');
+                const name = parts[0];
+                const sec = (parseFloat(parts[1]) || 1) * beatSec;
+                melodyNoteIndex++;
+                if (name !== 'R') {
+                    const f = NOTE_FREQ[name];
+                    if (f) playNote(f, sec);
+                }
+                melodyTimer = setTimeout(next, sec * 1000);
+            }
+            next();
+        }
+
+        // ======== 存档系统（localStorage 持久化） ========
+        function saveGame() {
+            try {
+                const d = {
+                    s: gameState.stars, l: gameState.level, e: gameState.exp,
+                    m: gameState.maxExp, a: gameState.achievements, o: gameState.ownedSongs,
+                    lv: levels.map(l => [l.id, l.unlocked, l.stars]),
+                    sn: songs.filter(s => s.owned).map(s => s.id)
+                };
+                localStorage.setItem('tiantian-math', JSON.stringify(d));
+            } catch(e) {}
+        }
+
+        function loadGame() {
+            try {
+                const raw = localStorage.getItem('tiantian-math');
+                if (!raw) return;
+                const d = JSON.parse(raw);
+                if ('s' in d) {
+                    gameState.stars = d.s || 0;
+                    gameState.level = d.l || 1;
+                    gameState.exp = d.e || 0;
+                    gameState.maxExp = d.m || 100;
+                    gameState.achievements = d.a || [];
+                    gameState.ownedSongs = d.o || [];
+                }
+                if (d.lv) d.lv.forEach(([id, unlocked, stars]) => {
+                    const lv = levels.find(x => x.id === id);
+                    if (lv) { lv.unlocked = unlocked; lv.stars = stars; }
+                });
+                if (d.sn) d.sn.forEach(id => {
+                    const s = songs.find(x => x.id === id);
+                    if (s) s.owned = true;
+                });
+            } catch(e) {}
+        }
+
         // 初始化游戏
         function initGame() {
+            loadGame();
             renderLevels();
             updateStats();
             setupEventListeners();
@@ -1918,27 +2037,12 @@
                     break;
 
                 case 'maze':
-                    // 数字迷宫 - 比大小
-                    const num1 = Math.floor(Math.random() * 15) + 1;
-                    const num2 = Math.floor(Math.random() * 15) + 1;
-                    if (num1 > num2) {
-                        question = `${num1} 和 ${num2}，哪个更大？`;
-                        answer = num1;
-                        options = [num1, num2, Math.max(num1, num2) + 1, Math.max(num1, num2) - 1].filter((v, i, a) => a.indexOf(v) === i && v > 0);
-                        while (options.length < 4) options.push(options[0] + options.length);
-                        options.sort(() => Math.random() - 0.5);
-                    } else if (num1 < num2) {
-                        question = `${num1} 和 ${num2}，哪个更大？`;
-                        answer = num2;
-                        options = [num1, num2, Math.max(num1, num2) + 1, Math.max(num1, num2) - 1].filter((v, i, a) => a.indexOf(v) === i && v > 0);
-                        while (options.length < 4) options.push(options[0] + options.length);
-                        options.sort(() => Math.random() - 0.5);
-                    } else {
-                        question = `${num1} 和 ${num2}，哪个更大？`;
-                        answer = num1;
-                        options = [num1, num1 + 1, num1 + 2, num1 + 3];
-                        options.sort(() => Math.random() - 0.5);
-                    }
+                    // 数字迷宫 - 判断奇偶
+                    const mazeNum = Math.floor(Math.random() * 20) + 1;
+                    const isEven = mazeNum % 2 === 0;
+                    question = `${mazeNum} 是奇数还是偶数？`;
+                    answer = isEven ? '偶数' : '奇数';
+                    options = ['奇数', '偶数'];
                     break;
 
                 case 'sequence':
@@ -2023,7 +2127,7 @@
                 btn.classList.add('wrong');
                 // 显示正确答案
                 buttons.forEach(b => {
-                    if (parseInt(b.textContent) === correct) {
+                    if (b.textContent == correct) {
                         b.classList.add('correct');
                     }
                 });
@@ -2066,6 +2170,7 @@
             );
 
             updateStats();
+            saveGame();
         }
 
         // 返回关卡选择
@@ -2174,6 +2279,7 @@
                 gameState.ownedSongs.push(song.id);
                 checkAchievements();
                 updateStats();
+                saveGame();
                 renderMusicShop();
                 showModal(
                     '🎵',
@@ -2196,20 +2302,20 @@
             const song = songs.find(s => s.id === songId);
             if (!song || !song.owned) return;
 
+            stopMelody();
             currentSong = song;
-            isPlaying = true;
+            melodyNoteIndex = 0;
+            currentMelodyData = SONG_MELODIES[songId];
 
             document.getElementById('music-title').textContent = song.name;
             document.getElementById('music-artist').textContent = song.artist;
-            document.getElementById('play-pause').textContent = '⏸';
             document.getElementById('music-player').classList.add('active');
 
-            showModal(
-                '🎵',
-                `正在播放: ${song.name}`,
-                `艺术家: ${song.artist}\n\n（这是演示版本，实际项目中会播放真实音乐）`,
-                [{ text: '关闭', primary: true, action: hideModal }]
-            );
+            if (currentMelodyData) {
+                isPlaying = true;
+                document.getElementById('play-pause').textContent = '⏸';
+                startMelodyLoop(currentMelodyData);
+            }
         }
 
         // 设置事件监听器
@@ -2230,8 +2336,14 @@
                 document.getElementById('music-shop').classList.remove('active');
             };
             document.getElementById('play-pause').onclick = () => {
-                isPlaying = !isPlaying;
-                document.getElementById('play-pause').textContent = isPlaying ? '⏸' : '▶';
+                if (!currentSong) return;
+                if (isPlaying) {
+                    stopMelody();
+                } else {
+                    isPlaying = true;
+                    document.getElementById('play-pause').textContent = '⏸';
+                    if (currentMelodyData) startMelodyLoop(currentMelodyData);
+                }
             };
             document.getElementById('prev-song').onclick = () => {
                 if (currentSong) {
