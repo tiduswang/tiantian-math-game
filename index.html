@@ -1696,8 +1696,9 @@
                     const nums = Array.from({length: 3}, () => 
                         Math.floor(Math.random() * 10) + 1
                     ).sort((a, b) => a - b);
-                    question = `从小到大排列: ${nums[2]}, ${nums[0]}, ${nums[1]}`;
-                    answer = nums.join(',');
+                    // 问中间的数字是什么（数字答案，避免字符串比较问题）
+                    question = `${nums[0]}, ?, ${nums[2]}  中间的数字是？`;
+                    answer = nums[1];
                     break;
                 case 'shapes':
                     const shapes = ['🔴', '🔵', '🟢', '🟡'];
